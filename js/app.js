@@ -12,6 +12,7 @@
     threshold: $('threshold'), autoThreshold: $('autoThreshold'), invert: $('invert'),
     blur: $('blur'), despeckle: $('despeckle'), maxRes: $('maxRes'),
     smooth: $('smooth'), simplify: $('simplify'), prune: $('prune'), pruneField: $('pruneField'),
+    extendEnds: $('extendEnds'), extendField: $('extendField'),
     widthMm: $('widthMm'), dpi: $('dpi'), dpiHint: $('dpiHint'),
     widthField: $('widthField'), dpiField: $('dpiField'), sizeResult: $('sizeResult'),
     download: $('download'), canvas: $('canvas'), stage: $('stage'), empty: $('empty'),
@@ -62,6 +63,8 @@
       smooth: +el.smooth.value,
       simplify: +el.simplify.value,
       prune: +el.prune.value,
+      extendEnds: el.extendEnds.checked,
+      curves: radio('curves'),
       sizeMode: radio('sizeMode'),
       widthMm: +el.widthMm.value,
       dpi: +el.dpi.value,
@@ -81,12 +84,13 @@
       s = JSON.parse(localStorage.getItem(STORAGE_KEY));
     } catch (e) { /* ignora */ }
     if (!s) return;
-    for (const r of ['mode', 'sizeMode', 'bg']) if (s[r]) setRadio(r, s[r]);
+    for (const r of ['mode', 'sizeMode', 'bg', 'curves']) if (s[r]) setRadio(r, s[r]);
     for (const k of ['threshold', 'blur', 'despeckle', 'maxRes', 'smooth', 'simplify', 'prune', 'widthMm', 'dpi']) {
       if (s[k] !== undefined && s[k] !== null) el[k].value = s[k];
     }
     el.autoThreshold.checked = s.autoThreshold !== false;
     el.invert.checked = !!s.invert;
+    el.extendEnds.checked = s.extendEnds !== false;
   }
 
   function syncControls() {
@@ -94,6 +98,7 @@
     for (const k in outputs) $(k + 'Out').textContent = outputs[k](el[k].value);
     el.threshold.disabled = s.autoThreshold;
     el.pruneField.hidden = s.mode !== 'centerline';
+    el.extendField.hidden = s.mode !== 'centerline';
     el.widthField.hidden = s.sizeMode !== 'width';
     el.dpiField.hidden = s.sizeMode !== 'dpi';
     el.dpiHint.textContent = state.fileDpi
@@ -189,7 +194,7 @@
     if (!state.imageData) return;
     clearTimeout(timer);
     el.busy.hidden = false;
-    timer = setTimeout(() => requestAnimationFrame(() => setTimeout(runProcess, 0)), delay);
+    timer = setTimeout(runProcess, Math.max(delay, 30));
   }
 
   function runProcess() {
@@ -239,7 +244,7 @@
     const closed = r.paths.filter((p) => p.closed).length;
     el.status.textContent =
       `${kind} · ${r.paths.length} vettori (${closed} chiusi, ${r.paths.length - closed} aperti) · ` +
-      `${r.points.toLocaleString('it-IT')} punti · lavoro ${r.width}×${r.height} px · ${Math.round(state.ms)} ms`;
+      `${r.points.toLocaleString('it-IT')} nodi${r.arcs ? ` (${r.arcs.toLocaleString('it-IT')} archi)` : ''} · lavoro ${r.width}×${r.height} px · ${Math.round(state.ms)} ms`;
     if (!r.paths.length) {
       el.status.textContent += ' — nessun vettore: prova a cambiare soglia o a invertire.';
     }
@@ -311,7 +316,7 @@
     ctx.lineCap = 'round';
     ctx.beginPath();
     for (const p of r.paths) {
-      const pts = p.pts;
+      const pts = NS.flattenPath(p, 1.5 / Math.max(v.s, 0.25));
       ctx.moveTo(pts[0], pts[1]);
       for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
       if (p.closed) ctx.closePath();
@@ -350,7 +355,7 @@
   }
 
   // ---------------------------------------------------------------- eventi
-  const reprocessIds = ['threshold', 'autoThreshold', 'invert', 'blur', 'despeckle', 'smooth', 'simplify', 'prune'];
+  const reprocessIds = ['threshold', 'autoThreshold', 'invert', 'blur', 'despeckle', 'smooth', 'simplify', 'prune', 'extendEnds'];
   for (const id of reprocessIds) {
     el[id].addEventListener('input', () => {
       syncControls();
@@ -364,7 +369,7 @@
     fitView();
     scheduleProcess(0);
   });
-  document.querySelectorAll('input[name="mode"]').forEach((r) =>
+  document.querySelectorAll('input[name="mode"], input[name="curves"]').forEach((r) =>
     r.addEventListener('change', () => {
       syncControls();
       saveSettings();

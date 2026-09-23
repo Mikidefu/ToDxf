@@ -100,6 +100,10 @@
 
       <section class="group">
         <h2><span class="step">4</span>Vettori</h2>
+        <div class="seg" role="radiogroup" aria-label="Tipo di curve">
+          <label><input type="radio" name="curves" value="arcs" checked><span>Curve lisce (archi)</span></label>
+          <label><input type="radio" name="curves" value="lines"><span>Polilinee</span></label>
+        </div>
         <div class="field">
           <div class="field-head">
             <label for="smooth">Levigatura</label>
@@ -109,11 +113,13 @@
         </div>
         <div class="field">
           <div class="field-head">
-            <label for="simplify">Semplificazione</label>
+            <label for="simplify">Tolleranza</label>
             <output id="simplifyOut">0.5 px</output>
           </div>
           <input type="range" id="simplify" min="0" max="3" step="0.1" value="0.5">
+          <p class="hint">Scostamento massimo dal tratto: più bassa è più precisa, più alta dà meno nodi.</p>
         </div>
+        <label class="check" id="extendField"><input type="checkbox" id="extendEnds" checked> Prolunga le estremità fino alla punta</label>
         <div class="field" id="pruneField">
           <div class="field-head">
             <label for="prune">Elimina rametti sotto</label>
@@ -146,7 +152,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 4-4m-4 4-4-4M4 20h16" /></svg>
           Scarica DXF
         </button>
-        <p class="hint">DXF R12 in millimetri, origine in basso a sinistra. In ArtCAM: <em>Importa vettori</em>.</p>
+        <p class="hint">DXF R12 in millimetri, origine in basso a sinistra. In ArtCAM: <em>Importa vettori</em>. Se il tuo programma non legge bene gli archi, scegli <em>Polilinee</em>.</p>
       </section>
     </aside>
 

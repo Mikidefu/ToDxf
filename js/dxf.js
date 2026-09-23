@@ -25,8 +25,9 @@
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of paths) {
-      for (let i = 0; i < p.pts.length; i += 2) {
-        const x = X(p.pts[i]), y = Y(p.pts[i + 1]);
+      const flat = NS.flattenPath ? NS.flattenPath(p, 2) : p.pts;
+      for (let i = 0; i < flat.length; i += 2) {
+        const x = X(flat[i]), y = Y(flat[i + 1]);
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -71,6 +72,9 @@
       for (let i = 0; i < n; i++) {
         g(0, 'VERTEX'); g(8, layer);
         g(10, num(X(p.pts[2 * i]))); g(20, num(Y(p.pts[2 * i + 1]))); g(30, '0.0');
+        // bulge = arco verso il vertice successivo; l'asse Y ribaltato inverte il verso
+        const b = p.bulges ? p.bulges[i] : 0;
+        if (b && Math.abs(b) > 1e-7) g(42, (-b).toFixed(8).replace(/0+$/, '').replace(/\.$/, '.0'));
       }
       g(0, 'SEQEND'); g(8, layer);
     }

@@ -38,6 +38,7 @@ function makeImage(w, h, dark) {
 }
 
 const base = { blur: 0, smooth: 2, simplify: 0.3, despeckle: 0 };
+const flat = (p) => Float64Array.from(NS.flattenPath(p, 0.5));
 
 console.log('Doppia linea (contorni)');
 test('quadrato pieno -> 1 contorno chiuso con area corretta', () => {
@@ -45,7 +46,7 @@ test('quadrato pieno -> 1 contorno chiuso con area corretta', () => {
   const r = NS.vectorize(img, { ...base, mode: 'outline' });
   assert(r.paths.length === 1, 'contorni: ' + r.paths.length);
   assert(r.paths[0].closed, 'deve essere chiuso');
-  near(Math.abs(NS.polygonArea(r.paths[0].pts)), 1600, 80, 'area');
+  near(Math.abs(NS.polygonArea(flat(r.paths[0]))), 1600, 80, 'area');
 });
 test('anello -> 2 contorni (esterno + foro)', () => {
   const img = makeImage(100, 100, (x, y) => {
@@ -54,7 +55,7 @@ test('anello -> 2 contorni (esterno + foro)', () => {
   });
   const r = NS.vectorize(img, { ...base, mode: 'outline' });
   assert(r.paths.length === 2, 'contorni: ' + r.paths.length);
-  const areas = r.paths.map((p) => Math.abs(NS.polygonArea(p.pts))).sort((a, b) => a - b);
+  const areas = r.paths.map((p) => Math.abs(NS.polygonArea(flat(p)))).sort((a, b) => a - b);
   near(areas[0], Math.PI * 15 * 15, 60, 'area foro');
   near(areas[1], Math.PI * 30 * 30, 120, 'area esterna');
 });
@@ -62,7 +63,7 @@ test('inverti: disegno chiaro su fondo scuro', () => {
   const img = makeImage(60, 60, (x, y) => !(x > 20 && x < 40 && y > 20 && y < 40));
   const r = NS.vectorize(img, { ...base, mode: 'outline', invert: true });
   assert(r.paths.length === 1, 'contorni: ' + r.paths.length);
-  near(Math.abs(NS.polygonArea(r.paths[0].pts)), 400, 40, 'area');
+  near(Math.abs(NS.polygonArea(flat(r.paths[0]))), 400, 40, 'area');
 });
 test('pulizia: le macchie piccole spariscono', () => {
   const img = makeImage(80, 80, (x, y) => (x > 20 && x < 60 && y > 20 && y < 60) || (x > 5 && x < 8 && y > 5 && y < 8));
@@ -77,8 +78,9 @@ test('barra orizzontale -> 1 linea aperta al centro', () => {
   assert(r.paths.length === 1, 'linee: ' + r.paths.length);
   const p = r.paths[0];
   assert(!p.closed, 'deve essere aperta');
-  for (let i = 1; i < p.pts.length; i += 2) near(p.pts[i], 20, 1.5, 'y');
-  near(NS.pathLength(p.pts), 75, 8, 'lunghezza');
+  const f = flat(p);
+  for (let i = 1; i < f.length; i += 2) near(f[i], 20, 1.5, 'y');
+  near(NS.pathLength(flat(p)), 79, 3, 'lunghezza (prolungata fino alle punte)');
 });
 test('anello sottile -> 1 linea chiusa', () => {
   const img = makeImage(100, 100, (x, y) => {
@@ -88,20 +90,66 @@ test('anello sottile -> 1 linea chiusa', () => {
   const r = NS.vectorize(img, { ...base, mode: 'centerline', prune: 8 });
   assert(r.paths.length === 1, 'linee: ' + r.paths.length);
   assert(r.paths[0].closed, 'deve essere chiusa');
-  near(NS.pathLength(r.paths[0].pts, true), 2 * Math.PI * 30, 10, 'circonferenza');
+  near(NS.pathLength(flat(r.paths[0]), true), 2 * Math.PI * 30, 10, 'circonferenza');
 });
 test('lettera L -> 1 linea continua', () => {
   const img = makeImage(100, 100, (x, y) => (x > 20 && x < 28 && y > 10 && y < 90) || (x > 20 && x < 80 && y > 82 && y < 90));
   const r = NS.vectorize(img, { ...base, mode: 'centerline', prune: 10 });
   assert(r.paths.length === 1, 'linee: ' + r.paths.length);
 });
-test('lettera T -> 3 rami dall\'incrocio', () => {
+test('lettera T -> barra intera + gambo che la tocca', () => {
   const img = makeImage(100, 100, (x, y) => (x > 10 && x < 90 && y > 10 && y < 18) || (x > 46 && x < 54 && y > 10 && y < 90));
   const r = NS.vectorize(img, { ...base, mode: 'centerline', prune: 10 });
-  assert(r.paths.length === 3, 'linee: ' + r.paths.length);
+  assert(r.paths.length === 2, 'linee: ' + r.paths.length);
+  const [bar, stem] = r.paths.map(flat).sort((a, b) => Math.abs(a[1] - a[a.length - 1]) - Math.abs(b[1] - b[b.length - 1]));
+  near(NS.pathLength(bar), 79, 4, 'barra');
+  const top = Math.min(stem[1], stem[stem.length - 1]);
+  near(top, 14, 1.5, 'il gambo arriva alla barra');
+});
+
+test('senza prolungamento la linea si ferma prima delle punte', () => {
+  const img = makeImage(100, 40, (x, y) => x > 10 && x < 90 && y > 16 && y < 24);
+  const r = NS.vectorize(img, { ...base, mode: 'centerline', prune: 8, extendEnds: false });
+  assert(NS.pathLength(flat(r.paths[0])) < 76, 'lunghezza ' + NS.pathLength(flat(r.paths[0])));
+});
+test('incrocio a X -> 2 tratti continui che si attraversano', () => {
+  const img = makeImage(120, 120, (x, y) => Math.abs(x - y) < 5 && x > 10 && x < 110 || Math.abs(x + y - 120) < 5 && x > 10 && x < 110);
+  const r = NS.vectorize(img, { ...base, mode: 'centerline', prune: 10 });
+  assert(r.paths.length === 2, 'linee: ' + r.paths.length);
+  for (const p of r.paths) near(NS.pathLength(flat(p)), 100 * Math.SQRT2, 12, 'lunghezza diagonale');
+});
+test('curva liscia -> pochi archi, tutti entro la tolleranza', () => {
+  const img = makeImage(200, 200, (x, y) => { const d = Math.hypot(x - 100, y - 100); return d < 83 && d > 77; });
+  const r = NS.vectorize(img, { ...base, mode: 'centerline', simplify: 0.3 });
+  assert(r.paths.length === 1 && r.paths[0].closed, 'un anello chiuso');
+  assert(r.arcs > 0 && r.arcs <= 60, 'archi: ' + r.arcs);
+  const f = flat(r.paths[0]);
+  for (let i = 0; i < f.length; i += 2) near(Math.hypot(f[i] - 100, f[i + 1] - 100), 80, 1, 'raggio');
+});
+test('polilinee: nessun arco', () => {
+  const img = makeImage(100, 100, (x, y) => { const d = Math.hypot(x - 50, y - 50); return d < 30 && d > 15; });
+  const r = NS.vectorize(img, { ...base, mode: 'outline', curves: 'lines' });
+  assert(r.paths.length === 2 && r.arcs === 0 && r.paths.every((p) => !p.bulges), 'solo polilinee');
 });
 
 console.log('DXF');
+test('DXF con archi: bulge scritti e verso corretto (asse Y ribaltato)', () => {
+  const img = makeImage(100, 100, (x, y) => Math.hypot(x - 50, y - 50) < 30);
+  const r = NS.vectorize(img, { ...base, mode: 'outline' });
+  const lines = NS.buildDxf(r.paths, { scale: 1, height: 100 }).split('\r\n');
+  const verts = [];
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    if (lines[i] === '0' && lines[i + 1] === 'VERTEX') verts.push({ x: +lines[i + 5], y: +lines[i + 7], b: 0 });
+    if (lines[i] === '42') verts[verts.length - 1].b = +lines[i + 1];
+  }
+  assert(verts.some((v) => v.b !== 0), 'nessun bulge');
+  // ricostruisce il cerchio dai bulge in coordinate DXF e ne controlla il raggio
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i], b = verts[(i + 1) % verts.length];
+    const mid = NS.arcPoints(a.x, a.y, b.x, b.y, a.b, 100);
+    for (let k = 0; k < mid.length; k += 2) near(Math.hypot(mid[k] - 50, mid[k + 1] - 50), 30, 1, 'raggio in DXF');
+  }
+});
 test('DXF R12 valido con unità e coordinate in mm', () => {
   const img = makeImage(100, 50, (x, y) => x > 10 && x < 90 && y > 10 && y < 40);
   const r = NS.vectorize(img, { ...base, mode: 'outline' });

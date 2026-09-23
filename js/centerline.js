@@ -4,8 +4,10 @@
  * 1. Assottigliamento Zhang–Suen fino a uno scheletro largo 1 pixel.
  * 2. Rimozione dei pixel "a scalino" ridondanti (scheletro 8-connesso pulito).
  * 3. Lo scheletro diventa un grafo: nodi = estremità e incroci, archi = percorsi.
- * 4. Taglio dei rametti corti (spur) e unione dei percorsi che si incontrano
- *    in un nodo con esattamente due rami, per avere vettori lunghi e continui.
+ * 4. Taglio dei rametti corti (spur).
+ * 5. Agli incroci i rami che proseguono dritti vengono uniti con un raccordo
+ *    morbido, così i vettori restano lunghi e continui (vedi resolveJunctions).
+ * 6. Le estremità libere possono essere prolungate fino alla punta del tratto.
  */
 (function (root) {
   'use strict';
@@ -106,18 +108,6 @@
       img[k] = 0;
     }
     return { img, W, H, pixels: pixels.filter((k) => img[k]) };
-  }
-
-  function reversePath(p) {
-    const src = p.pts, n = src.length / 2, out = new Array(src.length);
-    for (let i = 0; i < n; i++) {
-      out[2 * i] = src[2 * (n - 1 - i)];
-      out[2 * i + 1] = src[2 * (n - 1 - i) + 1];
-    }
-    p.pts = out;
-    const t = p.a;
-    p.a = p.b;
-    p.b = t;
   }
 
   function traceCenterlines(bin, w, h, opts) {
@@ -274,43 +264,306 @@
       }
     }
 
-    // Unione dei percorsi nei nodi con esattamente due rami.
-    const queue = [];
-    inc.forEach((_, node) => {
-      if (node < C) queue.push(node);
+    return resolveJunctions(paths, centers, C, bin, w, h, !!(opts && opts.extendEnds));
+  }
+
+  // ------------------------------------------------------------------ incroci
+
+  const hypot = Math.hypot;
+
+  /** Curva di Hermite da p0 a p1 con tangenti m0, m1: restituisce i punti interni. */
+  function hermite(p0x, p0y, m0x, m0y, p1x, p1y, m1x, m1y) {
+    const L = hypot(p1x - p0x, p1y - p0y);
+    const n = Math.max(2, Math.ceil(L));
+    const out = [];
+    for (let k = 1; k < n; k++) {
+      const t = k / n, t2 = t * t, t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+      out.push(h00 * p0x + h10 * m0x + h01 * p1x + h11 * m1x, h00 * p0y + h10 * m0y + h01 * p1y + h11 * m1y);
+    }
+    return out;
+  }
+
+  function reversedPairs(a) {
+    const out = new Array(a.length);
+    for (let i = 0, n = a.length / 2; i < n; i++) {
+      out[2 * i] = a[2 * (n - 1 - i)];
+      out[2 * i + 1] = a[2 * (n - 1 - i) + 1];
+    }
+    return out;
+  }
+
+  /**
+   * Vicino agli incroci lo scheletro si deforma (i rami "cadono" verso il centro).
+   * Qui si tagliano i rami entro il raggio dell'incrocio, si accoppiano i rami che
+   * proseguono dritti (come la penna che scrive) raccordandoli con una curva morbida,
+   * e i rami rimasti soli vengono raccordati al tratto più vicino. Infine si
+   * concatenano i tratti in vettori lunghi e continui.
+   */
+  function resolveJunctions(paths, centers, C, bin, w, h, extendEnds) {
+    const dt = NS.distanceTransform(bin, w, h);
+    const radiusAt = (x, y) => {
+      const ix = Math.min(w - 1, Math.max(0, Math.floor(x)));
+      const iy = Math.min(h - 1, Math.max(0, Math.floor(y)));
+      return dt[iy * w + ix];
+    };
+    const inside = (x, y) => {
+      const ix = Math.floor(x), iy = Math.floor(y);
+      return ix >= 0 && iy >= 0 && ix < w && iy < h && bin[iy * w + ix] === 1;
+    };
+
+    // Due strade che si incrociano di sbieco danno due incroci vicini uniti da un
+    // tratto cortissimo: si fondono in un solo incrocio.
+    const parent = new Int32Array(C).map((_, i) => i);
+    const find = (x) => {
+      while (parent[x] !== x) x = parent[x] = parent[parent[x]];
+      return x;
+    };
+    const shortLinks = [];
+    paths.forEach((p, i) => {
+      if (!p.alive || p.closed || p.a >= C || p.b >= C) return;
+      const len = NS.pathLength(p.pts, false);
+      const r = Math.max(radiusAt(centers[2 * p.a], centers[2 * p.a + 1]), radiusAt(centers[2 * p.b], centers[2 * p.b + 1]));
+      if (len < 1.5 * r + 2) shortLinks.push({ i, len });
     });
-    while (queue.length) {
-      const n = queue.pop();
-      const list = inc.get(n);
-      if (!list || list.length !== 2) continue;
-      const i = list[0], j = list[1];
-      inc.set(n, []);
-      if (i === j) {
-        paths[i].closed = true;
-        continue;
+    shortLinks.sort((x, y) => x.len - y.len);
+    for (const { i } of shortLinks) {
+      const p = paths[i];
+      p.alive = false;
+      parent[find(p.a)] = find(p.b);
+    }
+    // centro ed estensione di ogni incrocio fuso
+    const members = new Map();
+    for (let c = 0; c < C; c++) {
+      const r = find(c);
+      if (!members.has(r)) members.set(r, []);
+      members.get(r).push(c);
+    }
+    const nodeX = new Float64Array(C), nodeY = new Float64Array(C), nodeR = new Float64Array(C);
+    members.forEach((list, r) => {
+      let sx = 0, sy = 0;
+      for (const c of list) {
+        sx += centers[2 * c];
+        sy += centers[2 * c + 1];
       }
-      const p = paths[i], q = paths[j];
-      if (p.b !== n) reversePath(p);
-      if (q.a !== n) reversePath(q);
-      p.pts = p.pts.concat(q.pts.slice(2));
-      p.b = q.b;
-      q.alive = false;
-      const other = inc.get(q.b);
-      const idx = other.indexOf(j);
-      if (idx >= 0) other[idx] = i;
-      if (q.b < C) queue.push(q.b);
+      const x = sx / list.length, y = sy / list.length;
+      let ext = radiusAt(x, y);
+      for (const c of list) {
+        ext = Math.max(ext, hypot(centers[2 * c] - x, centers[2 * c + 1] - y) + radiusAt(centers[2 * c], centers[2 * c + 1]));
+      }
+      nodeX[r] = x;
+      nodeY[r] = y;
+      nodeR[r] = ext;
+    });
+
+    const open = [];
+    paths.forEach((p, i) => {
+      if (!p.alive || p.closed) return;
+      if (p.a < C) p.a = find(p.a);
+      if (p.b < C) p.b = find(p.b);
+      open.push(i);
+    });
+
+    // Estremità di ogni nodo di incrocio
+    const ends = new Map();
+    const addEnd = (node, i, end) => {
+      if (node >= C || node < 0) return;
+      let l = ends.get(node);
+      if (!l) ends.set(node, (l = []));
+      l.push({ i, end });
+    };
+    for (const i of open) {
+      addEnd(paths[i].a, i, 0);
+      addEnd(paths[i].b, i, 1);
     }
 
-    const out = [];
-    for (const p of paths) {
-      if (!p.alive) continue;
-      let pts = p.pts;
-      if (p.closed && pts.length >= 4) {
-        const L = pts.length;
-        if (Math.abs(pts[0] - pts[L - 2]) < 1e-9 && Math.abs(pts[1] - pts[L - 1]) < 1e-9) pts = pts.slice(0, L - 2);
+    // 1) Taglio dei tratti deformati vicino agli incroci
+    const S = new Int32Array(paths.length), E = new Int32Array(paths.length);
+    for (const i of open) {
+      S[i] = 0;
+      E[i] = paths[i].pts.length / 2 - 1;
+    }
+    const nodeTrim = new Map();
+    ends.forEach((list, node) => {
+      if (list.length < 2) return;
+      const cx = nodeX[node], cy = nodeY[node];
+      const trim = Math.max(2, 1.2 * nodeR[node]);
+      nodeTrim.set(node, trim);
+      for (const { i, end } of list) {
+        const pts = paths[i].pts, n = pts.length / 2;
+        if (end === 0) {
+          let k = 0;
+          while (k < n - 1 && hypot(pts[2 * k] - cx, pts[2 * k + 1] - cy) < trim) k++;
+          S[i] = Math.max(S[i], k);
+        } else {
+          let k = n - 1;
+          while (k > 0 && hypot(pts[2 * k] - cx, pts[2 * k + 1] - cy) < trim) k--;
+          E[i] = Math.min(E[i], k);
+        }
       }
-      if (pts.length < 4) continue;
-      out.push({ pts: Float64Array.from(pts), closed: p.closed });
+    });
+    for (const i of open) {
+      if (E[i] - S[i] >= 1) continue;
+      const n = paths[i].pts.length / 2;
+      const mid = Math.max(0, Math.min(n - 2, Math.floor((S[i] + E[i]) / 2)));
+      S[i] = mid;
+      E[i] = mid + 1;
+    }
+
+    // Punto finale (dopo il taglio) e direzione uscente dall'incrocio di un'estremità
+    function endInfo(i, end, reach) {
+      const pts = paths[i].pts;
+      const k0 = end === 0 ? S[i] : E[i];
+      const step = end === 0 ? 1 : -1;
+      const limit = end === 0 ? E[i] : S[i];
+      const x = pts[2 * k0], y = pts[2 * k0 + 1];
+      let k = k0, fx = x, fy = y;
+      while (k !== limit && hypot(fx - x, fy - y) < reach) {
+        k += step;
+        fx = pts[2 * k];
+        fy = pts[2 * k + 1];
+      }
+      let dx = fx - x, dy = fy - y;
+      const l = hypot(dx, dy) || 1;
+      return { x, y, dx: dx / l, dy: dy / l };
+    }
+
+    // 2) Accoppiamento dei rami per continuità di direzione e raccordi
+    const link = new Map(); // chiave estremità -> {to, pts}
+    const tail = new Map(); // chiave estremità -> punti di raccordo verso l'incrocio
+    const key = (i, end) => i * 2 + end;
+    ends.forEach((list, node) => {
+      if (list.length < 2) return;
+      const cx = nodeX[node], cy = nodeY[node];
+      const reach = Math.max(3, nodeTrim.get(node));
+      const info = list.map(({ i, end }) => Object.assign({ i, end, paired: false }, endInfo(i, end, reach)));
+      const pairs = [];
+      for (let u = 0; u < info.length; u++) {
+        for (let v = u + 1; v < info.length; v++) {
+          pairs.push({ u, v, dot: info[u].dx * info[v].dx + info[u].dy * info[v].dy });
+        }
+      }
+      pairs.sort((a, b) => a.dot - b.dot);
+      const bridges = [];
+      for (const { u, v, dot } of pairs) {
+        const A = info[u], B = info[v];
+        if (A.paired || B.paired) continue;
+        if (info.length > 2 && dot > -0.35) break; // svolta oltre ~70°: non è lo stesso tratto
+        A.paired = B.paired = true;
+        const L = hypot(B.x - A.x, B.y - A.y);
+        const pts = hermite(A.x, A.y, -A.dx * L, -A.dy * L, B.x, B.y, B.dx * L, B.dy * L);
+        link.set(key(A.i, A.end), { to: key(B.i, B.end), pts });
+        link.set(key(B.i, B.end), { to: key(A.i, A.end), pts: reversedPairs(pts) });
+        bridges.push([A.x, A.y].concat(pts, [B.x, B.y]));
+      }
+      for (const A of info) {
+        if (A.paired) continue;
+        let tx = cx, ty = cy, best = Infinity;
+        for (const b of bridges) {
+          for (let k = 0; k < b.length; k += 2) {
+            const d = hypot(b[k] - A.x, b[k + 1] - A.y);
+            if (d < best) {
+              best = d;
+              tx = b[k];
+              ty = b[k + 1];
+            }
+          }
+        }
+        const L = hypot(tx - A.x, ty - A.y);
+        const pts = hermite(A.x, A.y, -A.dx * L * 0.5, -A.dy * L * 0.5, tx, ty, tx - A.x, ty - A.y);
+        pts.push(tx, ty);
+        tail.set(key(A.i, A.end), pts);
+      }
+    });
+
+    // Prolunga un'estremità libera lungo la sua direzione fino al bordo del tratto
+    function extend(out, atStart) {
+      const n = out.length / 2;
+      if (n < 2) return;
+      const k0 = atStart ? 0 : n - 1;
+      const x = out[2 * k0], y = out[2 * k0 + 1];
+      const r = radiusAt(x, y);
+      const reach = Math.max(3, r);
+      let k = k0, fx = x, fy = y;
+      while (k !== (atStart ? n - 1 : 0) && hypot(fx - x, fy - y) < reach) {
+        k += atStart ? 1 : -1;
+        fx = out[2 * k];
+        fy = out[2 * k + 1];
+      }
+      const l = hypot(x - fx, y - fy);
+      if (l < 1) return;
+      const ux = (x - fx) / l, uy = (y - fy) / l;
+      const maxLen = 2 * r + 2;
+      let last = 0;
+      for (let t = 0.5; t <= maxLen && inside(x + ux * t, y + uy * t); t += 0.5) last = t;
+      if (last < 1) return;
+      const ex = x + ux * last, ey = y + uy * last;
+      if (atStart) out.unshift(ex, ey);
+      else out.push(ex, ey);
+    }
+
+    // 3) Concatenazione dei tratti in vettori continui
+    const used = new Uint8Array(paths.length);
+    const out = [];
+    const appendPath = (dst, i, reversed) => {
+      const pts = paths[i].pts;
+      if (!reversed) for (let k = S[i]; k <= E[i]; k++) dst.push(pts[2 * k], pts[2 * k + 1]);
+      else for (let k = E[i]; k >= S[i]; k--) dst.push(pts[2 * k], pts[2 * k + 1]);
+    };
+    for (const i0 of open) {
+      if (used[i0]) continue;
+      // risale all'inizio della catena
+      let i = i0, entry = 0, cyclic = false;
+      for (let guard = 0; ; guard++) {
+        const L = link.get(key(i, entry));
+        if (!L) break;
+        const j = L.to >> 1, jEntry = 1 - (L.to & 1);
+        if ((j === i0 && jEntry === 0) || guard > open.length * 2) {
+          cyclic = true;
+          break;
+        }
+        i = j;
+        entry = jEntry;
+      }
+      if (cyclic) {
+        i = i0;
+        entry = 0;
+      }
+      const pts = [];
+      const headTail = cyclic ? null : tail.get(key(i, entry));
+      if (headTail) pts.push(...reversedPairs(headTail));
+      const freeStart = !cyclic && !headTail;
+      let ci = i, ce = entry, freeEnd = false, closed = false;
+      for (;;) {
+        used[ci] = 1;
+        appendPath(pts, ci, ce === 1);
+        const exit = 1 - ce;
+        const L = link.get(key(ci, exit));
+        if (!L) {
+          const t = tail.get(key(ci, exit));
+          if (t) pts.push(...t);
+          else freeEnd = true;
+          break;
+        }
+        pts.push(...L.pts);
+        const j = L.to >> 1, jEntry = L.to & 1;
+        if (j === i && jEntry === entry) {
+          closed = true;
+          break;
+        }
+        if (used[j]) break;
+        ci = j;
+        ce = jEntry;
+      }
+      if (extendEnds) {
+        if (freeStart) extend(pts, true);
+        if (freeEnd) extend(pts, false);
+      }
+      if (pts.length >= 4) out.push({ pts: Float64Array.from(pts), closed });
+    }
+    // anelli senza incroci
+    for (const p of paths) {
+      if (p.alive && p.closed && p.pts.length >= 6) out.push({ pts: Float64Array.from(p.pts), closed: true });
     }
     return out;
   }

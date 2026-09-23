@@ -143,6 +143,31 @@
     return out;
   }
 
+  /** Distanza (pixel, chamfer 1/√2) di ogni pixel di disegno dal fondo più vicino. */
+  function distanceTransform(bin, w, h) {
+    const D = Math.SQRT2;
+    const d = new Float32Array(w * h);
+    for (let i = 0; i < d.length; i++) d[i] = bin[i] ? 1e9 : 0;
+    // fuori dall'immagine è fondo: distanza 0
+    const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : d[y * w + x]);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const k = y * w + x;
+        if (!d[k]) continue;
+        d[k] = Math.min(d[k], at(x - 1, y) + 1, at(x, y - 1) + 1, at(x - 1, y - 1) + D, at(x + 1, y - 1) + D);
+      }
+    }
+    for (let y = h - 1; y >= 0; y--) {
+      for (let x = w - 1; x >= 0; x--) {
+        const k = y * w + x;
+        if (!d[k]) continue;
+        d[k] = Math.min(d[k], at(x + 1, y) + 1, at(x, y + 1) + 1, at(x + 1, y + 1) + D, at(x - 1, y + 1) + D);
+      }
+    }
+    return d;
+  }
+
+  NS.distanceTransform = distanceTransform;
   NS.toGray = toGray;
   NS.blur = blur;
   NS.otsu = otsu;
