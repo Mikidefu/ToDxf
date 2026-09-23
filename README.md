@@ -2,7 +2,7 @@
 
 Converte immagini (**JPG, JPEG, PNG, WEBP, BMP, GIF, AVIF, SVG**) in file **DXF** da aprire in **ArtCAM 2016**, per serigrafia/incisione a **doppia linea** o a **singola linea**.
 
-**Usala online: https://mikidefu.github.io/ToDxf/**
+**Usala online: https://todxf.vercel.app** (copia anche su https://mikidefu.github.io/ToDxf/)
 
 È una web app che gira interamente nel browser: niente da installare, e le immagini non vengono mai caricate su internet (anche dalla versione online l'elaborazione avviene sul tuo computer). Scaricando il progetto funziona anche offline.
 
