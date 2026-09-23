@@ -1,0 +1,9 @@
+{
+  "name": "todxf",
+  "version": "1.0.0",
+  "description": "Converte immagini (JPG, PNG, WEBP...) in DXF per ArtCAM 2016, a doppia o singola linea.",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run-tests.js"
+  }
+}

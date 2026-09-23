@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ToDxf · Immagine → DXF</title>
+  <meta name="description" content="Converte immagini JPG, PNG, WEBP in DXF per ArtCAM 2016, a doppia o singola linea.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e4572e'/%3E%3Cpath d='M7 22c5-12 13 4 18-10' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><path d="M7 22c5-12 13 4 18-10" /></svg>
+      </span>
+      <h1>ToDxf</h1>
+      <span class="subtitle">Immagine → DXF per ArtCAM 2016</span>
+    </div>
+    <span class="offline">Funziona offline · nessun file lascia il tuo computer</span>
+  </header>
+
+  <main class="layout">
+    <aside class="panel">
+      <section class="group">
+        <h2><span class="step">1</span>Immagine</h2>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="image/*,.jpg,.jpeg,.png,.webp,.bmp,.gif,.avif,.svg">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
+          <span id="dropText">Trascina qui l'immagine<br><small>oppure clicca · incolla con Ctrl+V</small></span>
+        </label>
+        <p class="file-info" id="fileInfo">JPG, JPEG, PNG, WEBP, BMP, GIF, AVIF, SVG</p>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">2</span>Tipo di serigrafia</h2>
+        <div class="modes" role="radiogroup">
+          <label class="mode">
+            <input type="radio" name="mode" value="outline" checked>
+            <span class="mode-card">
+              <svg viewBox="0 0 40 40" aria-hidden="true" class="ico-double">
+                <path class="outer" d="M7 29C13 7 27 33 33 11" />
+                <path class="inner" d="M7 29C13 7 27 33 33 11" />
+              </svg>
+              <strong>Doppia linea</strong>
+              <small>Contorno di entrambi i bordi di ogni forma (profili chiusi)</small>
+            </span>
+          </label>
+          <label class="mode">
+            <input type="radio" name="mode" value="centerline">
+            <span class="mode-card">
+              <svg viewBox="0 0 40 40" aria-hidden="true" class="ico-single">
+                <path d="M7 29C13 7 27 33 33 11" />
+              </svg>
+              <strong>Singola linea</strong>
+              <small>Linea centrale del tratto, un solo vettore (incisione)</small>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">3</span>Bianco e nero</h2>
+        <div class="field">
+          <div class="field-head">
+            <label for="threshold">Soglia</label>
+            <output id="thresholdOut">128</output>
+          </div>
+          <input type="range" id="threshold" min="1" max="254" value="128">
+          <label class="check"><input type="checkbox" id="autoThreshold" checked> Automatica</label>
+        </div>
+        <label class="check"><input type="checkbox" id="invert"> Inverti (disegno chiaro su fondo scuro)</label>
+        <div class="field">
+          <div class="field-head">
+            <label for="blur">Sfocatura bordi</label>
+            <output id="blurOut">1</output>
+          </div>
+          <input type="range" id="blur" min="0" max="6" step="1" value="1">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label for="despeckle">Rimuovi macchie sotto</label>
+            <output id="despeckleOut">20 px²</output>
+          </div>
+          <input type="range" id="despeckle" min="0" max="500" step="5" value="20">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label for="maxRes">Risoluzione di lavoro</label>
+          </div>
+          <select id="maxRes">
+            <option value="800">800 px · veloce</option>
+            <option value="1200">1200 px</option>
+            <option value="1600" selected>1600 px · consigliata</option>
+            <option value="2400">2400 px</option>
+            <option value="3200">3200 px · massimo dettaglio</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">4</span>Vettori</h2>
+        <div class="field">
+          <div class="field-head">
+            <label for="smooth">Levigatura</label>
+            <output id="smoothOut">3</output>
+          </div>
+          <input type="range" id="smooth" min="0" max="10" step="1" value="3">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label for="simplify">Semplificazione</label>
+            <output id="simplifyOut">0.5 px</output>
+          </div>
+          <input type="range" id="simplify" min="0" max="3" step="0.1" value="0.5">
+        </div>
+        <div class="field" id="pruneField">
+          <div class="field-head">
+            <label for="prune">Elimina rametti sotto</label>
+            <output id="pruneOut">10 px</output>
+          </div>
+          <input type="range" id="prune" min="0" max="80" step="1" value="10">
+        </div>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">5</span>Dimensioni</h2>
+        <div class="seg" role="radiogroup">
+          <label><input type="radio" name="sizeMode" value="width" checked><span>Larghezza in mm</span></label>
+          <label><input type="radio" name="sizeMode" value="dpi"><span>Da DPI</span></label>
+        </div>
+        <div class="field size-input" id="widthField">
+          <label for="widthMm">Larghezza finale</label>
+          <div class="unit-input"><input type="number" id="widthMm" min="1" max="10000" step="0.1" value="100"><span>mm</span></div>
+        </div>
+        <div class="field size-input" id="dpiField" hidden>
+          <label for="dpi">Risoluzione immagine</label>
+          <div class="unit-input"><input type="number" id="dpi" min="1" max="10000" step="1" value="300"><span>DPI</span></div>
+          <p class="hint" id="dpiHint"></p>
+        </div>
+        <p class="size-result" id="sizeResult">—</p>
+      </section>
+
+      <section class="group export">
+        <button type="button" id="download" class="primary" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 4-4m-4 4-4-4M4 20h16" /></svg>
+          Scarica DXF
+        </button>
+        <p class="hint">DXF R12 in millimetri, origine in basso a sinistra. In ArtCAM: <em>Importa vettori</em>.</p>
+      </section>
+    </aside>
+
+    <section class="viewer">
+      <div class="toolbar">
+        <div class="seg small" role="radiogroup" aria-label="Sfondo anteprima">
+          <label><input type="radio" name="bg" value="original" checked><span>Originale</span></label>
+          <label><input type="radio" name="bg" value="binary"><span>Bianco/nero</span></label>
+          <label><input type="radio" name="bg" value="none"><span>Solo vettori</span></label>
+        </div>
+        <div class="zoom">
+          <button type="button" id="zoomOut" title="Riduci" aria-label="Riduci">−</button>
+          <span id="zoomLevel">100%</span>
+          <button type="button" id="zoomIn" title="Ingrandisci" aria-label="Ingrandisci">+</button>
+          <button type="button" id="zoomFit" title="Adatta alla finestra">Adatta</button>
+        </div>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+        <div class="empty" id="empty">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="12" width="48" height="40" rx="4" /><path d="m8 44 14-14 12 12 8-8 14 14" /><circle cx="42" cy="24" r="4" /></svg>
+          <p>Carica un'immagine per vedere l'anteprima dei vettori</p>
+        </div>
+        <div class="busy" id="busy" hidden>Elaborazione…</div>
+      </div>
+      <div class="statusbar" id="status">Nessuna immagine</div>
+    </section>
+  </main>
+
+  <script src="js/imageproc.js"></script>
+  <script src="js/geometry.js"></script>
+  <script src="js/contour.js"></script>
+  <script src="js/centerline.js"></script>
+  <script src="js/vectorize.js"></script>
+  <script src="js/dxf.js"></script>
+  <script src="js/dpi.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
